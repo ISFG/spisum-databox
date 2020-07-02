@@ -1,0 +1,14 @@
+version: "2"
+
+services:
+    isfg.spisum.databox:
+        image: spisum-databox
+        environment:
+            - CREDENTIALS_FILE=/opt/credentials.json
+            - ALFRESCO_REPOSITORY_URL=http://hostname.domain:8082
+            - DOWNLOADER_DELAY_MS=1800000
+            - JAVA_TOOL_OPTIONS="-Dfile.encoding=UTF-8"
+        ports:
+            - 7777:8080
+        volumes:
+            - ./credentials.json:/opt/credentials.json
