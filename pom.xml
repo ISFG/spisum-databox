@@ -9,9 +9,9 @@
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
 	<groupId>cz.isfgroup</groupId>
-	<artifactId>ssl-spisum-databox</artifactId>
+	<artifactId>spisum-databox</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name>ssl-spisum-databox</name>
+	<name>spisum-databox</name>
 	<description>Spisum Databox Downloader</description>
 
 	<properties>
@@ -113,7 +113,7 @@
 						<image>openjdk:11-jdk-slim</image>
 					</from>
 					<to>
-						<image>ssl-spisum-databox</image>
+						<image>spisum-databox</image>
 					</to>
 				</configuration>
 				<executions>

@@ -1,14 +1,21 @@
 version: "2"
 
 services:
-    isfg.spisum.databox:
+    isfg.databox:
         image: spisum-databox
+        restart: unless-stopped
         environment:
             - CREDENTIALS_FILE=/opt/credentials.json
-            - ALFRESCO_REPOSITORY_URL=http://hostname.domain:8082
+            - ALFRESCO_REPOSITORY_URL=http://alfresco:8080
             - DOWNLOADER_DELAY_MS=1800000
             - JAVA_TOOL_OPTIONS="-Dfile.encoding=UTF-8"
+        networks:
+            - spisum_network
         ports:
-            - 7777:8080
+            - 127.0.0.1:8085:8080
         volumes:
             - ./credentials.json:/opt/credentials.json
+
+networks:
+    spisum_network:
+        external: true
