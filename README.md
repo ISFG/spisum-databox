@@ -39,6 +39,10 @@ ALFRESCO_REPOSITORY_URL=http://hostname.domain:8082
 ```
 
 ```bash
+$ git clone https://github.com/ISFG/java-isds.git
+$ cd java-isds
+$ mvn clean install -DskipTests
+$ cd ..
 $ git clone https://github.com/ISFG/spisum-databox.git -b master --single-branch spisum-databox
 $ cd spisum-databox
 $ mvn clean package

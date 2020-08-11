@@ -53,8 +53,10 @@ public class AlfrescoService {
             body.add("ssl:databoxDeliveryDate", envelopeData.getDeliveryTime());
             body.add("ssl:databoxRecipient", envelopeData.getRecipientId());
             body.add("ssl:databoxRecipientName", envelopeData.getRecipientName());
+            body.add("ssl:databoxRecipientDataBoxType", envelopeData.getRecipientType());
             body.add("ssl:databoxSender", envelopeData.getSenderId());
             body.add("ssl:databoxSenderName", envelopeData.getSenderName());
+            body.add("ssl:databoxSenderDataBoxType", envelopeData.getSenderType());
             body.add("ssl:databoxSubject", envelopeData.getSubject());
         }
         body.add("ssl:databoxRecipientUid", envelopeData.getRecipientUsername());

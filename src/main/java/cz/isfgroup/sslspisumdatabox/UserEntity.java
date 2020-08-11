@@ -7,6 +7,7 @@ import lombok.Value;
 @Value
 public class UserEntity {
 
+    String id;
     String name;
     String username;
 

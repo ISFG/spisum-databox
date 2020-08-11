@@ -15,8 +15,10 @@ public class EnvelopeData implements Serializable {
     private String recipientId;
     private String recipientName;
     private String recipientUsername;
+    private String recipientType;
     private String senderId;
     private String senderName;
+    private String senderType;
     private String subject;
 
 }

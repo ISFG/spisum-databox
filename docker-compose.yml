@@ -15,6 +15,8 @@ services:
             - 127.0.0.1:8085:8080
         volumes:
             - ./credentials.json:/opt/credentials.json
+            - /etc/timezone:/etc/timezone:ro
+            - /etc/localtime:/etc/localtime:ro
 
 networks:
     spisum_network:

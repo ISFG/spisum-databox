@@ -20,6 +20,7 @@ public class AccountController {
             .map(t -> UserEntity.builder()
                 .name(t.getName())
                 .username(t.getUsername())
+                .id(t.getId())
                 .build())
             .collect(Collectors.toList());
     }
