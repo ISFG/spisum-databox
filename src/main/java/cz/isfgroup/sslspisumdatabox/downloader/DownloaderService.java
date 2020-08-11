@@ -2,12 +2,14 @@ package cz.isfgroup.sslspisumdatabox.downloader;
 
 import cz.abclinuxu.datoveschranky.common.FileAttachmentStorer;
 import cz.abclinuxu.datoveschranky.common.entities.Attachment;
+import cz.abclinuxu.datoveschranky.common.entities.DataBoxType;
 import cz.abclinuxu.datoveschranky.common.entities.MessageEnvelope;
 import cz.abclinuxu.datoveschranky.common.entities.MessageState;
 import cz.abclinuxu.datoveschranky.common.interfaces.AttachmentStorer;
 import cz.abclinuxu.datoveschranky.common.interfaces.DataBoxDownloadService;
 import cz.isfgroup.sslspisumdatabox.databox.DataBoxDownloadServiceProvider;
 import cz.isfgroup.sslspisumdatabox.databox.DataBoxMessagesServiceProvider;
+import cz.isfgroup.sslspisumdatabox.databox.DataboxSearchService;
 import cz.isfgroup.sslspisumdatabox.processor.User;
 import cz.isfgroup.sslspisumdatabox.processor.UserService;
 import cz.isfgroup.sslspisumdatabox.uploader.AlfrescoNodeIdService;
@@ -56,6 +58,7 @@ public class DownloaderService {
     private final AlfrescoService alfrescoService;
     private final AlfrescoNodeIdService alfrescoNodeIdService;
     private final UserService userService;
+    private final DataboxSearchService databoxSearchService;
 
     @Async("databoxExecutor")
     public CompletableFuture<DownloadResult> download(User user) {
@@ -109,7 +112,10 @@ public class DownloaderService {
 
                 String zfoFileName = String.format("%s.%s", envelope.getMessageID(), "zfo");
                 Path zfoPath = Path.of(downloadFolder, zfoFileName);
-                MetaData metaData = getZfoMetaData(dataBoxDownloadService, envelope, attachments, zfoFileName, zfoPath, name);
+                DataBoxType recipientType = databoxSearchService.getDatabox(name, envelope.getRecipient().getDataBoxID()).getDataBoxType();
+                DataBoxType senderType = databoxSearchService.getDatabox(name, envelope.getSender().getDataBoxID()).getDataBoxType();
+                MetaData metaData = getZfoMetaData(dataBoxDownloadService, envelope, attachments, zfoFileName, zfoPath, name, senderType,
+                    recipientType);
                 log.info("Sending file to upload processing: {}", envelope);
                 CompletableFuture<GetNodeChildrenModelListEntry> zfoUploadFuture = alfrescoService.moveFile(metaData.getLocalFileName(),
                     folderId, metaData.getEnvelopeData());
@@ -174,11 +180,12 @@ public class DownloaderService {
     }
 
     private MetaData getZfoMetaData(DataBoxDownloadService dataBoxDownloadService,
-                                    MessageEnvelope t, List<Attachment> attachments, String zfoFileName, Path zfoPath, String user) {
+                                    MessageEnvelope t, List<Attachment> attachments, String zfoFileName, Path zfoPath, String user,
+                                    DataBoxType senderType, DataBoxType recipientType) {
         MetaData metaData;
         try (OutputStream out = Files.newOutputStream(zfoPath)) {
             dataBoxDownloadService.downloadSignedMessage(t, out);
-            EnvelopeData envelopeData = getEnvelopeDataForZfo(t, attachments.size(), user);
+            EnvelopeData envelopeData = getEnvelopeDataForZfo(t, attachments.size(), user, senderType, recipientType);
             metaData = getMetaData(zfoFileName, envelopeData);
         } catch (IOException e) {
             throw new RuntimeException(String.format("Cannot write to file: %s", zfoPath), e);
@@ -208,15 +215,19 @@ public class DownloaderService {
                     .build()));
     }
 
-    private EnvelopeData getEnvelopeDataForZfo(MessageEnvelope envelope, int attachmentCount, String user) {
+    private EnvelopeData getEnvelopeDataForZfo(MessageEnvelope envelope, int attachmentCount, String user,
+                                               DataBoxType senderType,
+                                               DataBoxType recipientType) {
         return EnvelopeData.builder()
             .nodeType("ssl:databox")
             .deliveryTime(envelope.getDeliveryTime().toZonedDateTime().withZoneSameInstant(ZoneOffset.UTC).toString())
             .recipientId(envelope.getRecipient().getDataBoxID())
             .recipientName(envelope.getRecipient().getIdentity())
             .recipientUsername(user)
+            .recipientType(recipientType != null ? recipientType.toString().toLowerCase() : null)
             .senderId(envelope.getSender().getDataBoxID())
             .senderName(envelope.getSender().getIdentity())
+            .senderType(senderType != null ? senderType.toString().toLowerCase() : null)
             .subject(envelope.getAnnotation())
             .attachmentCount(attachmentCount)
             .build();
