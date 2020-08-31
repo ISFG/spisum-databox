@@ -30,7 +30,7 @@ public class DataboxService {
         .build(key -> null);
     private static final AtomicLong CURRENT_JOB_ID = new AtomicLong(0);
 
-    @Scheduled(fixedDelayString = "${downloader.delay.ms:60000}")
+    @Scheduled(fixedDelayString = "${downloader.delay.ms:60000}", cron = "${downloader.delay.cron:}")
     public Status processDataboxes() {
         long currentJobId = CURRENT_JOB_ID.get();
         if ((getRunningDownloadTasks() == 0) && (getRunningUploadTasks() == 0) && (!Optional.ofNullable(

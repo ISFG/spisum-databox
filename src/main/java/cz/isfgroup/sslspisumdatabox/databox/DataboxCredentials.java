@@ -2,14 +2,17 @@ package cz.isfgroup.sslspisumdatabox.databox;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import cz.isfgroup.sslspisumdatabox.DataboxException;
 import cz.isfgroup.sslspisumdatabox.downloader.UsernamePasswordConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.util.ResourceUtils;
 
 import javax.annotation.PostConstruct;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
@@ -19,7 +22,7 @@ import java.util.List;
 @Service
 public class DataboxCredentials {
 
-    @Value("${credentials.file:/tmp/credentials.json}")
+    @Value("${credentials.file}")
     private String jsonConfigFile;
 
     private final ObjectMapper objectMapper;
@@ -28,16 +31,14 @@ public class DataboxCredentials {
 
     @PostConstruct
     public void init() {
-        File file = new File(jsonConfigFile);
-        if (file.exists()) {
-            try {
+        try {
+            File file = ResourceUtils.getFile(jsonConfigFile);
                 usernamePasswords = objectMapper.readValue(file, new TypeReference<>() {
                 });
-            } catch (IOException e) {
-                log.error("File {} could not be read", jsonConfigFile);
-            }
-        } else {
-            log.warn("File not found: {}", jsonConfigFile);
+        } catch (FileNotFoundException e) {
+            throw new DataboxException(String.format("Cannot open credentials file: %s", jsonConfigFile), e);
+        } catch (IOException e) {
+            throw new DataboxException(String.format("File %s could not be read", jsonConfigFile), e);
         }
     }
 

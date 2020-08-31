@@ -9,6 +9,6 @@ public class ZfoChildrenMapping {
 
     private String childId;
     @Builder.Default
-    private String assocType = "ssl:databoxAttachments";
+    private String assocType = "ssl:digitalDeliveryAttachments";
 
 }

@@ -1,6 +1,11 @@
 package cz.isfgroup.sslspisumdatabox.uploader;
 
+import cz.isfgroup.sslspisumdatabox.downloader.AttachmentEnvelopeData;
+import cz.isfgroup.sslspisumdatabox.downloader.AttachmentEnvelopeDataEnhancer;
 import cz.isfgroup.sslspisumdatabox.downloader.EnvelopeData;
+import cz.isfgroup.sslspisumdatabox.downloader.EnvelopeDataEnhancer;
+import cz.isfgroup.sslspisumdatabox.downloader.ZfoEnvelopeData;
+import cz.isfgroup.sslspisumdatabox.downloader.ZfoEnvelopeDataEnhancer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
@@ -34,42 +39,39 @@ public class AlfrescoService {
     private static final DateTimeFormatter dateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS");
     private static final Pattern reservedCharacters = Pattern.compile("([\"\\<\\>\\|\\\\\\:\\&\\;\\?\\*\\|\"]+)");
 
+    private static final ZfoEnvelopeDataEnhancer zfoEnvelopeDataEnhancer = new ZfoEnvelopeDataEnhancer();
+    private static final AttachmentEnvelopeDataEnhancer attachmentEnvelopeDataEnhancer = new AttachmentEnvelopeDataEnhancer();
+
     private final RestTemplate restTemplate;
     private final AlfrescoConfig alfrescoConfig;
+    private final AlfrescoNodeService alfrescoNodeService;
 
     @Value("${download.folder:/tmp}")
     private String downloadFolder;
 
     @Async("uploaderExecutor")
-    public CompletableFuture<GetNodeChildrenModelListEntry> moveFile(String localFileName, String folderId,
-                                                                     EnvelopeData envelopeData) {
-        Path localFile = Path.of(downloadFolder, escapeReservedCharacters(localFileName));
-        log.info("Uploading file: {}", localFile);
+    public CompletableFuture<GetNodeChildrenModelListEntry> moveFileToUnprocessed(String localFileName,
+                                                                                  ZfoEnvelopeData envelopeData) {
+        return moveFileToUnprocessed(localFileName, envelopeData, zfoEnvelopeDataEnhancer);
+    }
+
+    @Async("uploaderExecutor")
+    public CompletableFuture<GetNodeChildrenModelListEntry> moveFileToUnprocessed(String localFileName,
+                                                                                  AttachmentEnvelopeData envelopeData) {
+        return moveFileToUnprocessed(localFileName, envelopeData, attachmentEnvelopeDataEnhancer);
+    }
+
+    private <T extends EnvelopeData> CompletableFuture<GetNodeChildrenModelListEntry> moveFileToUnprocessed(String localFileName,
+                                                                                                            T envelopeData,
+                                                                                                            EnvelopeDataEnhancer<T> enhancer) {
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-        body.add("filedata", new FileSystemResource(localFile));
+        Path localFile = addCommonProperties(localFileName, body);
+        enhancer.addProperties(body, envelopeData);
 
-        if (envelopeData.getAttachmentCount() != null) {
-            body.add("ssl:databoxAttachmentsCount", envelopeData.getAttachmentCount());
-            body.add("ssl:databoxDeliveryDate", envelopeData.getDeliveryTime());
-            body.add("ssl:databoxRecipient", envelopeData.getRecipientId());
-            body.add("ssl:databoxRecipientName", envelopeData.getRecipientName());
-            body.add("ssl:databoxRecipientDataBoxType", envelopeData.getRecipientType());
-            body.add("ssl:databoxSender", envelopeData.getSenderId());
-            body.add("ssl:databoxSenderName", envelopeData.getSenderName());
-            body.add("ssl:databoxSenderDataBoxType", envelopeData.getSenderType());
-            body.add("ssl:databoxSubject", envelopeData.getSubject());
-        }
-        body.add("ssl:databoxRecipientUid", envelopeData.getRecipientUsername());
-        body.add("nodeType", envelopeData.getNodeType());
-        body.add("name", String.format("%s-%s.%s", LocalDateTime.now().format(dateTimeFormatter), getShortUuid(),
-            FilenameUtils.getExtension(localFileName)));
-        body.add("ssl:fileName", localFileName);
-
-        HttpEntity<MultiValueMap<String, Object>> requestEntity
-            = new HttpEntity<>(body, alfrescoConfig.getMultipartHeaders());
+        HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, alfrescoConfig.getMultipartHeaders());
         String url = String.format("%s/alfresco/api/-default-/public/alfresco/versions/1/nodes/%s/children",
             alfrescoConfig.getServerUrl(),
-            folderId);
+            alfrescoNodeService.getUnprocessedNodeId());
 
         ResponseEntity<GetNodeChildrenModelListEntry> response = restTemplate.postForEntity(url, requestEntity,
             GetNodeChildrenModelListEntry.class);
@@ -80,6 +82,16 @@ public class AlfrescoService {
             log.error("Cannot remove file: {}", localFile, e);
         }
         return CompletableFuture.completedFuture(response.getBody());
+    }
+
+    private Path addCommonProperties(String localFileName, MultiValueMap<String, Object> body) {
+        Path localFile = Path.of(downloadFolder, escapeReservedCharacters(localFileName));
+        log.info("Uploading file: {}", localFile);
+        body.add("filedata", new FileSystemResource(localFile));
+        body.add("name", String.format("%s-%s.%s", LocalDateTime.now().format(dateTimeFormatter), getShortUuid(),
+            FilenameUtils.getExtension(localFileName)));
+        body.add("ssl:fileName", localFileName);
+        return localFile;
     }
 
     public String updateChild(String parent, ZfoChildrenMapping zfoChildrenMapping) {
@@ -118,7 +130,6 @@ public class AlfrescoService {
         } else {
             return filename;
         }
-
     }
 
 }

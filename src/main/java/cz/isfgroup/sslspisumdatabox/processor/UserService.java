@@ -2,7 +2,7 @@ package cz.isfgroup.sslspisumdatabox.processor;
 
 import cz.isfgroup.sslspisumdatabox.databox.DataboxCredentials;
 import cz.isfgroup.sslspisumdatabox.downloader.UsernamePasswordConfig;
-import cz.isfgroup.sslspisumdatabox.uploader.AlfrescoNodeIdService;
+import cz.isfgroup.sslspisumdatabox.uploader.AlfrescoNodeService;
 import cz.isfgroup.sslspisumdatabox.uploader.AlfrescoTimestamp;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,7 +22,7 @@ import java.util.stream.Collectors;
 public class UserService {
 
     private final DataboxCredentials databoxCredentials;
-    private final AlfrescoNodeIdService alfrescoNodeIdService;
+    private final AlfrescoNodeService alfrescoNodeService;
 
     private static final Map<String, Long> userTimestamp = new ConcurrentHashMap<>();
 
@@ -51,7 +51,7 @@ public class UserService {
     public Optional<Long> getPreviousTimestamp(String id) {
         return Optional.ofNullable(Optional.ofNullable(userTimestamp.get(id))
             .orElseGet(() -> Optional.ofNullable(
-                alfrescoNodeIdService.getUnprocessedNodeUserTimestamps(alfrescoNodeIdService.getUnprocessedNodeId()).get(
+                alfrescoNodeService.getUnprocessedNodeUserTimestamps(alfrescoNodeService.getUnprocessedNodeId()).get(
                     id))
                 .map(AlfrescoTimestamp::getDownloadTimestamp)
                 .orElse(null)));
@@ -59,7 +59,7 @@ public class UserService {
 
     public void setUserTimestamp(String id, Long realTimestamp, Long messageTimestamp) {
         userTimestamp.put(id, realTimestamp);
-        alfrescoNodeIdService.addUnprocessedNodeUserTimestamps(alfrescoNodeIdService.getUnprocessedNodeId(), id, realTimestamp,
+        alfrescoNodeService.addUnprocessedNodeUserTimestamps(alfrescoNodeService.getUnprocessedNodeId(), id, realTimestamp,
             messageTimestamp);
     }
 

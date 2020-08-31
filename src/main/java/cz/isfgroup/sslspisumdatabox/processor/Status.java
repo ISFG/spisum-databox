@@ -1,16 +1,20 @@
 package cz.isfgroup.sslspisumdatabox.processor;
 
 import lombok.Builder;
-import lombok.Value;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
 
 import java.util.List;
 
+@AllArgsConstructor
 @Builder
-@Value
+@Data
+@NoArgsConstructor
 public class Status {
 
-    long jobId;
-    boolean running;
-    long newMessageCount;
-    List<String> stackTrace;
+    private long jobId;
+    private boolean running;
+    private long newMessageCount;
+    private List<String> stackTrace;
 }

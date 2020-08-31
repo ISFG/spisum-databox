@@ -7,18 +7,17 @@ import cz.abclinuxu.datoveschranky.common.entities.MessageEnvelope;
 import cz.abclinuxu.datoveschranky.common.entities.MessageState;
 import cz.abclinuxu.datoveschranky.common.interfaces.AttachmentStorer;
 import cz.abclinuxu.datoveschranky.common.interfaces.DataBoxDownloadService;
+import cz.isfgroup.sslspisumdatabox.DataboxException;
 import cz.isfgroup.sslspisumdatabox.databox.DataBoxDownloadServiceProvider;
 import cz.isfgroup.sslspisumdatabox.databox.DataBoxMessagesServiceProvider;
 import cz.isfgroup.sslspisumdatabox.databox.DataboxSearchService;
 import cz.isfgroup.sslspisumdatabox.processor.User;
 import cz.isfgroup.sslspisumdatabox.processor.UserService;
-import cz.isfgroup.sslspisumdatabox.uploader.AlfrescoNodeIdService;
+import cz.isfgroup.sslspisumdatabox.uploader.AlfrescoNodeService;
 import cz.isfgroup.sslspisumdatabox.uploader.AlfrescoService;
 import cz.isfgroup.sslspisumdatabox.uploader.GetNodeChildrenModelListEntry;
 import cz.isfgroup.sslspisumdatabox.uploader.GetNodeChildrenModelListEntrySingle;
 import cz.isfgroup.sslspisumdatabox.uploader.ZfoChildrenMapping;
-import lombok.Builder;
-import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -56,17 +55,16 @@ public class DownloaderService {
     private final DataBoxMessagesServiceProvider dataBoxMessagesServiceProvider;
     private final DataBoxDownloadServiceProvider dataBoxDownloadServiceProvider;
     private final AlfrescoService alfrescoService;
-    private final AlfrescoNodeIdService alfrescoNodeIdService;
     private final UserService userService;
     private final DataboxSearchService databoxSearchService;
+    private final AlfrescoNodeService alfrescoNodeService;
 
     @Async("databoxExecutor")
     public CompletableFuture<DownloadResult> download(User user) {
+        long currentTimestamp = System.currentTimeMillis();
         Date from = new Date(user.getTimestamp());
-        // 0,1 second overlap just to be sure because of Internet :D
         String name = user.getName();
         Date to = new Date();
-        long currentTimestamp = System.currentTimeMillis() - 100;
 
         // no paging
         int offset = 1;
@@ -106,34 +104,28 @@ public class DownloaderService {
                 List<Attachment> attachments = dataBoxDownloadService.downloadMessage(envelope,
                     storeForMessageAttachments).getAttachments();
                 attachmentCount.addAndGet(attachments.size());
-                String folderId = alfrescoNodeIdService.getUnprocessedNodeId();
-                List<GetNodeChildrenModelListEntry> uploadedEntries = getUploadedEntries(
-                    uploadAttachments(envelope, folderId, attachments, name));
 
                 String zfoFileName = String.format("%s.%s", envelope.getMessageID(), "zfo");
-                Path zfoPath = Path.of(downloadFolder, zfoFileName);
-                DataBoxType recipientType = databoxSearchService.getDatabox(name, envelope.getRecipient().getDataBoxID()).getDataBoxType();
-                DataBoxType senderType = databoxSearchService.getDatabox(name, envelope.getSender().getDataBoxID()).getDataBoxType();
-                MetaData metaData = getZfoMetaData(dataBoxDownloadService, envelope, attachments, zfoFileName, zfoPath, name, senderType,
-                    recipientType);
+                downloadSignedMessage(dataBoxDownloadService, envelope, zfoFileName);
                 log.info("Sending file to upload processing: {}", envelope);
-                CompletableFuture<GetNodeChildrenModelListEntry> zfoUploadFuture = alfrescoService.moveFile(metaData.getLocalFileName(),
-                    folderId, metaData.getEnvelopeData());
+                GetNodeChildrenModelListEntry zfoNodeListEntry;
                 try {
-                    zfoUploadFuture
-                        .thenAccept(nodeChildrenModelListEntry -> sendParentChildMapping(uploadedEntries, nodeChildrenModelListEntry))
+                    zfoNodeListEntry = alfrescoService.moveFileToUnprocessed(zfoFileName,
+                        getEnvelopeDataForZfo(envelope, attachments.size(), name))
                         .get();
-                    timestamps.add(envelope.getDeliveryTime().getTimeInMillis());
                 } catch (InterruptedException e) {
-                    log.warn("Interrupted, cleaning up: {}", uploadedEntries, e);
-                    deleteEntries(uploadedEntries.stream());
                     Thread.currentThread().interrupt();
-                    throw new RuntimeException(e);
+                    throw new DataboxException(e);
                 } catch (ExecutionException e) {
-                    log.warn("Execution exception when processing envelope, cleaning up: {}", uploadedEntries, e);
-                    deleteEntries(uploadedEntries.stream());
-                    throw new RuntimeException(e);
+                    throw new DataboxException(e);
                 }
+                String zfoId = zfoNodeListEntry.getEntry().getId();
+                String zfoPid = alfrescoNodeService.getPid(zfoId);
+                List<GetNodeChildrenModelListEntry> uploadedEntries = getUploadedEntries(
+                    uploadAttachments(envelope, attachments, name, zfoPid));
+                sendParentChildMapping(uploadedEntries, zfoNodeListEntry);
+                alfrescoNodeService.getPutComponentCount(zfoId, attachmentCount.get());
+                timestamps.add(envelope.getDeliveryTime().getTimeInMillis());
             });
             userService.setUserTimestamp(name, currentTimestamp, timestamps.get(timestamps.size() - 1));
         } catch (Exception e) {
@@ -159,11 +151,11 @@ public class DownloaderService {
             log.warn("Interrupted, cleaning up: {}", uploadedFiles, e);
             cleanupAlfresco(uploadedFiles);
             Thread.currentThread().interrupt();
-            throw new RuntimeException(e);
+            throw new DataboxException(e);
         } catch (ExecutionException e) {
             log.warn("Execution failed, cleaning up: {}", uploadedFiles, e);
             cleanupAlfresco(uploadedFiles);
-            throw new RuntimeException(e);
+            throw new DataboxException(e);
         }
     }
 
@@ -179,34 +171,36 @@ public class DownloaderService {
             .forEach(alfrescoService::deleteNode);
     }
 
-    private MetaData getZfoMetaData(DataBoxDownloadService dataBoxDownloadService,
-                                    MessageEnvelope t, List<Attachment> attachments, String zfoFileName, Path zfoPath, String user,
-                                    DataBoxType senderType, DataBoxType recipientType) {
-        MetaData metaData;
+    private void downloadSignedMessage(DataBoxDownloadService dataBoxDownloadService, MessageEnvelope messageEnvelope, String zfoFileName) {
+        Path zfoPath = Path.of(downloadFolder, zfoFileName);
         try (OutputStream out = Files.newOutputStream(zfoPath)) {
-            dataBoxDownloadService.downloadSignedMessage(t, out);
-            EnvelopeData envelopeData = getEnvelopeDataForZfo(t, attachments.size(), user, senderType, recipientType);
-            metaData = getMetaData(zfoFileName, envelopeData);
+            dataBoxDownloadService.downloadSignedMessage(messageEnvelope, out);
         } catch (IOException e) {
-            throw new RuntimeException(String.format("Cannot write to file: %s", zfoPath), e);
+            throw new DataboxException(String.format("Cannot write to file: %s", zfoPath), e);
         }
-        return metaData;
     }
 
-    private List<CompletableFuture<GetNodeChildrenModelListEntry>> uploadAttachments(MessageEnvelope t, String folderId,
+    private List<CompletableFuture<GetNodeChildrenModelListEntry>> uploadAttachments(MessageEnvelope envelope,
                                                                                      List<Attachment> attachments,
-                                                                                     String user) {
+                                                                                     String user,
+                                                                                     String zfoPid) {
+        AtomicLong attachmentCount = new AtomicLong(1);
         return attachments.stream()
-            .map(u -> {
-                EnvelopeData envelopeData = EnvelopeData.builder().nodeType("cm:content").recipientUsername(user).build();
-                return alfrescoService.moveFile(String.format("%s_%s", t.getMessageID(), u.getDescription()), folderId, envelopeData);
+            .map(attachment -> {
+                AttachmentEnvelopeData envelopeData = AttachmentEnvelopeData.builder()
+                    .recipientUsername(user)
+                    .zfoPid(zfoPid)
+                    .attachmentNumber(attachmentCount.getAndAdd(1))
+                    .build();
+                return alfrescoService.moveFileToUnprocessed(String.format("%s_%s", envelope.getMessageID(), attachment.getDescription()),
+                    envelopeData);
             })
             .collect(Collectors.toList());
     }
 
     private void sendParentChildMapping(List<GetNodeChildrenModelListEntry> uploadedFiles,
                                         GetNodeChildrenModelListEntry getNodeChildrenModelListEntry) {
-        uploadedFiles.parallelStream()
+        uploadedFiles.stream()
             .map(GetNodeChildrenModelListEntry::getEntry)
             .map(GetNodeChildrenModelListEntrySingle::getId)
             .forEach(u -> alfrescoService.updateChild(getNodeChildrenModelListEntry.getEntry().getId(),
@@ -215,11 +209,10 @@ public class DownloaderService {
                     .build()));
     }
 
-    private EnvelopeData getEnvelopeDataForZfo(MessageEnvelope envelope, int attachmentCount, String user,
-                                               DataBoxType senderType,
-                                               DataBoxType recipientType) {
-        return EnvelopeData.builder()
-            .nodeType("ssl:databox")
+    private ZfoEnvelopeData getEnvelopeDataForZfo(MessageEnvelope envelope, int attachmentCount, String user) {
+        DataBoxType recipientType = databoxSearchService.getDatabox(user, envelope.getRecipient().getDataBoxID()).getDataBoxType();
+        DataBoxType senderType = databoxSearchService.getDatabox(user, envelope.getSender().getDataBoxID()).getDataBoxType();
+        return ZfoEnvelopeData.builder()
             .deliveryTime(envelope.getDeliveryTime().toZonedDateTime().withZoneSameInstant(ZoneOffset.UTC).toString())
             .recipientId(envelope.getRecipient().getDataBoxID())
             .recipientName(envelope.getRecipient().getIdentity())
@@ -231,20 +224,6 @@ public class DownloaderService {
             .subject(envelope.getAnnotation())
             .attachmentCount(attachmentCount)
             .build();
-    }
-
-    private MetaData getMetaData(String zfoFileName, EnvelopeData envelopeData) {
-        return MetaData.builder()
-            .localFileName(zfoFileName)
-            .envelopeData(envelopeData)
-            .build();
-    }
-
-    @Builder
-    @Data
-    private static class MetaData {
-        private String localFileName;
-        private EnvelopeData envelopeData;
     }
 
 }

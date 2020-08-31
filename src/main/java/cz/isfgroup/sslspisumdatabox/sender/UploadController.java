@@ -1,6 +1,7 @@
 package cz.isfgroup.sslspisumdatabox.sender;
 
 import cz.abclinuxu.datoveschranky.common.entities.content.ByteContent;
+import cz.isfgroup.sslspisumdatabox.DataboxException;
 import cz.isfgroup.sslspisumdatabox.processor.User;
 import cz.isfgroup.sslspisumdatabox.processor.UserService;
 import lombok.RequiredArgsConstructor;
@@ -52,7 +53,7 @@ public class UploadController {
                             .build();
                     } catch (IOException e) {
                         log.error("Cannot get bytes from the file: {}", t.getOriginalFilename(), e);
-                        throw new RuntimeException(e);
+                        throw new DataboxException(e);
                     }
                 })
                 .collect(Collectors.toList()));

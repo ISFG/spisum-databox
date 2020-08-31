@@ -1,5 +1,6 @@
 package cz.isfgroup.sslspisumdatabox.processor;
 
+import cz.isfgroup.sslspisumdatabox.DataboxException;
 import cz.isfgroup.sslspisumdatabox.downloader.DownloadResult;
 import cz.isfgroup.sslspisumdatabox.downloader.DownloaderService;
 import lombok.RequiredArgsConstructor;
@@ -36,7 +37,7 @@ public class AttachmentService {
                     return resultFuture.get();
                 } catch (InterruptedException | ExecutionException e) {
                     // this will not happen as all futures are already finished
-                    throw new RuntimeException(e);
+                    throw new DataboxException(e);
                 }
             })
             .filter(Objects::nonNull)
